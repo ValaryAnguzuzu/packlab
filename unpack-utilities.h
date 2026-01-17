@@ -4,47 +4,59 @@
 #pragma once
 
 #include <stdbool.h>
-#include <stdint.h>
-#include <stdlib.h>
+#include <stdint.h> // fixed_width ints
+#include <stdlib.h> // size_t and malloc
 
 // Definitions
-#define MAX_STREAMS       16
+#define MAX_STREAMS       16 // packed file can contain a max of 16 streams
 #define HEADER_ALIGN      4096
 #define DATA_ALIGN        4096
-#define MAX_HEADER_SIZE   (4 + 8 + 8 + 16 + 2)
-#define DICTIONARY_LENGTH 16
-#define ESCAPE_BYTE       0x07
-#define MAX_RUN_LENGTH    16
+#define MAX_HEADER_SIZE   (4 + 8 + 8 + 16 + 2) // max possible header size for one stream:
+//4 = magic:2+version:1+flags:1;  8 = orig data size; 8 = packed data size; 16 = dict(if compressed); 2 = checksum(if checksum)
+// 20 bytes (MIN) to 38 bytes (MAX)
+#define DICTIONARY_LENGTH 16 
+#define ESCAPE_BYTE       0x07 
+#define MAX_RUN_LENGTH    16 // each group of 4 bits can represent 16 distinct values (0–15)
 
 
 // Struct to hold header configuration data
 // The data is parsed from the header and recorded in this struct
+    // config struct: represents header info for one stream
 typedef struct {
-  // whether the header is valid or not
+  // whether the header is VALID OR NOT
   // values of other fields are irrelevant if the header isn't valid
+  // if true: safe to proceed
   bool is_valid;
 
   // total length of the header data, not including padding
+  // values one of 20, 36, 22 or 38
   size_t header_len;
 
   // whether the file was compressed
+    // if so, set to true ie file must be decompressed
   bool is_compressed;
 
   // compression dictionary from header
   // (only valid if is_compressed is true)
+    // if compressed, copy 16 dic bytes here
   uint8_t dictionary_data[DICTIONARY_LENGTH];
 
   // whether the file was encrypted
+    // if so, set to true ie file must be decrypted
   bool is_encrypted;
 
   // whether the file was checksummed
+    // if so, set to true ie stream should be validated
   bool is_checksummed;
 
   // expected checksum value from header
   // (only valid if is_checksummed is true)
+    // note it is BIG ENDIAN
   uint16_t checksum_value;
 
   // whether there is a subsequent header
+    // true => after this stream there is another header later
+    // false => this is the last stream
   bool should_continue;
 
   // whether this stream is part of a split floating point stream pair
@@ -54,9 +66,11 @@ typedef struct {
   bool should_float3;
 
   // the size of data originally packed into this stream, in bytes
+    // size after decrypt/decompress: FINAL OUTPUT SIZE FOR THIS STREAM (little-endian)
   uint64_t orig_data_size;
 
   // the size of the data in this stream (i.e., after compression), in bytes
+    // little-endian
   uint64_t data_size;
 
 } packlab_config_t;
