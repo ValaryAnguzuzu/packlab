@@ -166,8 +166,22 @@ uint16_t calculate_checksum(uint8_t* input_data, size_t input_len) {
   // TODO
   // Calculate a checksum over input_data
   // Return the checksum value
+  // checksum included only when is_checksummed? is enabled => unsigned 16-bit big-endian
+  // adding the value of every byte in the file to a counter init at 0, and allowing for overflows
+    // Start with a 16-bit unsigned counter at 0
+    // For each byte in the stream data:
+    //   add that byte’s value to the counter
+    //   If the sum gets too big for 16 bits:
+    //     it wraps around (overflow)
 
-  return 0;
+  // if there's no data pointer, we can't read bytes
+  if (input_data == NULL) return 0;
+
+  uint16_t checksum = 0;
+  for (size_t i = 0; i < input_len; i++) {
+    checksum = (uint16_t)(checksum + (uint16_t)input_data[i]); // input data is uint8_t, we cast to uint16_t => 16bits world
+  }
+  return checksum;
 }
 
 uint16_t lfsr_step(uint16_t oldstate) {

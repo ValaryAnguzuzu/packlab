@@ -65,6 +65,10 @@ int test_lfsr_step(void) {
   return 0;
 }
 
+//------------------------------------------
+//          CHECKSUMMING TESTS:
+//-------------------------------------------
+
 // Here's an example testcase
 // It's written for the `calculate_checksum()` function, but the same ideas
 //  would work for any function you want to test
@@ -102,7 +106,51 @@ int example_test(void) {
   return 0;
 }
 
-    // PARSE_HEADER TESTS:
+// empty imput:
+int test_checksum_empty(void) {
+  uint16_t got = calculate_checksum(NULL, 0);
+  if (got != 0) {
+    printf("FAIL test_checksum_empty: got 0x%04X expected 0x0000\n", got);
+    return 1;
+  }
+  return 0;
+}
+
+// single byte:
+int test_checksum_single_byte(void) {
+  uint8_t data[] = { 0xAB };  // decimal 171
+  uint16_t got = calculate_checksum(data, sizeof(data));
+  if (got != 0x00AB) {
+    printf("FAIL test_checksum_single_byte: got 0x%04X expected 0x00AB\n", got);
+    return 1;
+  }
+  return 0;
+}
+// // overflow-----------------------------------
+// int test_checksum_overflow_wrap(void) {
+//   // 0xFFFF + 0x0002 = 0x10001 -> wraps to 0x0001 in uint16_t
+//   uint8_t data[] = { 0xFF, 0xFF, 0x02 }; // 255 + 255 + 2 = 512 = 0x0200 (not overflow)
+//   // The above does NOT overflow 16-bit, so we need a larger sum.
+
+//   // Better: use many 0xFF bytes. 257 bytes of 0xFF = 257*255 = 655...?
+//   // 255*257 = 255*(256+1) = 65280 + 255 = 65535 = 0xFFFF
+//   // Then add 0x02 -> 0x0001 after wrap.
+//   uint8_t big[258];
+//   for (int i = 0; i < 257; i++) {
+//     big[i] = 0xFF;
+//   }
+//   big[257] = 0x02;
+
+//   uint16_t got = calculate_checksum(big, sizeof(big));
+//   if (got != 0x0001) {
+//     printf("FAIL test_checksum_overflow_wrap: got 0x%04X expected 0x0001\n", got);
+//     return 1;
+//   }
+//   return 0;
+// }
+//--------------------------------------
+//          PARSE_HEADER TESTS:
+//--------------------------------------
 int test_parse_header(void) {
   // input data
   // This array is exactly the first 38 bytes of the file header
@@ -443,14 +491,12 @@ int main(void) {
   // // You can craft arbitrary array data as inputs to the functions
   // // Parsing headers, checksumming, decryption, and decompressing are all testable
 
-  // // Here's an example test
-  // // Note that it's going to fail until you implement the `calculate_checksum()` function
-  // result = example_test();
-  // if (result != 0) {
-  //   // Make sure to print the name of which test failed, so you can go find it and figure out why
-  //   printf("ERROR: example_test_setup failed\n");
-  //   return 1;
-  // }
+  result = example_test();
+  if (result != 0) {
+    printf("ERROR: example_test_setup failed\n");
+    return 1;
+  }
+  
   //added
   result = test_parse_header();
   if (result != 0) { printf("ERROR: test_parse_header failed\n"); return 1; }
