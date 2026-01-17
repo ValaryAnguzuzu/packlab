@@ -1,0 +1,5 @@
+*.o
+*.out
+unpack
+pack
+a.out
