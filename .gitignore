@@ -3,3 +3,5 @@
 unpack
 pack
 a.out
+_build/
+test-utilities
