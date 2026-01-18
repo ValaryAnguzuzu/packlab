@@ -148,6 +148,8 @@ int test_checksum_single_byte(void) {
 //   }
 //   return 0;
 // }
+
+
 //--------------------------------------
 //          PARSE_HEADER TESTS:
 //--------------------------------------
@@ -477,6 +479,70 @@ int test_parse_header_checksummed_but_short(void) {
   return 0;
 }
 
+//-------------------------------------
+//        DECRYPTION TESTS
+//---------------------------------------
+int test_decrypt_4byte_example_in_handout(void) {
+  // input data = [0x60, 0x5A, 0xFF, 0xB7]
+  // encryption_key = initial LFSR state = 0x1337
+  // LFSR outputs: 0x099B, 0X84CD
+  // XOR output_data: [0xFB, 0x53, 0x32, 0x33]
+
+  uint8_t input_data[] = {0x60, 0x5A, 0xFF, 0xB7}; // encrypted bytes
+  uint8_t output_data[sizeof(input_data)]; // weher decrypted bytes will go
+  uint8_t expected[] = {0xFB, 0x53, 0x32, 0x33}; // expected decrypted bytes
+
+  // decrypt function
+  decrypt_data(input_data, sizeof(input_data), output_data, sizeof(output_data), 0x1337);
+
+  // comparison
+  if (memcmp(output_data, expected, sizeof(expected)) != 0) {
+    printf("FAIL test_decrypt_4byte_example_in_handout: output mismatch\n ");
+    return 1;
+  }
+  return 0;
+}
+// odd number of bytes
+int test_decrypt_1byte_example_in_handout(void) {
+  // input_data  = [0x21]
+  // encryption_key = 0x1337
+  // first LFSR output = 0x099B => LSB = 0x9B
+  // 0x21 ^ 0x9B = 0xBA
+  // output_data = [0xBA]
+
+  uint8_t input_data[] = {0x21};
+  uint8_t output_data[sizeof(input_data)];
+
+  uint8_t expected[] = {0xBA};
+
+  decrypt_data(input_data, sizeof(input_data), output_data, sizeof(output_data), 0x1337);
+
+  if (memcmp(output_data, expected, sizeof(expected)) != 0) {
+    printf("FAIL test_decrypt_1byte_example_in_handout: output mismatch\n");
+    return 1;
+  }
+  return 0;
+}
+// output buffer too small
+int test_decrypt_output_len_too_small(void) {
+  // If output_len is smaller than input_len, decrypt_data should returnwithout writing out-of-bounds
+
+  uint8_t input_data[] = {0x60, 0x5A};   // 2 bytes input
+  uint8_t output_data[] = {0xAA};        // only 1 byte output buffer (too small)
+
+  decrypt_data(input_data, sizeof(input_data), output_data, sizeof(output_data), 0x1337);
+
+  // Output should remain unchanged
+  if (output_data[0] != 0xAA) {
+    printf("FAIL test_decrypt_output_len_too_small: output_data was modified\n");
+    return 1;
+  }
+  return 0;
+}
+
+
+
+
 int main(void) {
   // Test the LFSR implementation
   int result = test_lfsr_step();
@@ -489,13 +555,30 @@ int main(void) {
   // // You can craft arbitrary array data as inputs to the functions
   // // Parsing headers, checksumming, decryption, and decompressing are all testable
 
+
+// Test checksum implementation
   result = example_test();
   if (result != 0) {
     printf("ERROR: example_test_setup failed\n");
     return 1;
   }
+  result = test_checksum_empty();
+  if (result != 0) { printf("ERROR: test_checksum_empty failed\n"); return 1; }
+
+  result = test_checksum_single_byte();
+  if (result != 0) { printf("ERROR: test_checksum_single_byte failed\n"); return 1; }
+
+  // result = test_checksum_overflow_wrap();
+  // if (result != 0) { printf("ERROR: test_checksum_overflow_wrap failed\n"); return 1; }
+
+  // result = test_checksum_pattern_0_to_255();
+  // if (result != 0) { printf("ERROR: test_checksum_pattern_0_to_255 failed\n"); return 1; }
+
+  // result = test_checksum_null_len0();
+  // if (result != 0) { printf("ERROR: test_checksum_null_len0 failed\n"); return 1; }
   
-  //added
+
+  // Test parse_header implementation
   result = test_parse_header();
   if (result != 0) { printf("ERROR: test_parse_header failed\n"); return 1; }
 
@@ -522,6 +605,18 @@ int main(void) {
 
   result = test_parse_header_checksummed_but_short();
   if (result != 0) { printf("ERROR: test_parse_header_checksummed_but_short failed\n"); return 1; }
+
+
+  // Test the decrypt data implementation
+  result = test_decrypt_4byte_example_in_handout();
+  if (result != 0) { printf("ERROR: test_decrypt_4byte_example_in_handout failed\n"); return 1; }
+
+  result = test_decrypt_1byte_example_in_handout();
+  if (result != 0) { printf("ERROR: test_decrypt_1byte_example_in_handout failed\n"); return 1; }
+
+  result = test_decrypt_output_len_too_small();
+  if (result != 0) { printf("ERROR: test_decrypt_output_len_too_small failed\n"); return 1; }
+
 
   printf("All tests passed successfully!\n");
   return 0;
