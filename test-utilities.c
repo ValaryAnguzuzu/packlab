@@ -36,7 +36,7 @@ int test_lfsr_step(void) {
 
     // Iterate LFSR
     steps++;
-    new_state = lfsr_step(new_state);
+    new_state = lfsr_step(new_state); //so as not to save any state internally
 
     // Check if this state has already been reached
     repeat = lfsr_states[new_state];
@@ -478,14 +478,12 @@ int test_parse_header_checksummed_but_short(void) {
 }
 
 int main(void) {
-  int result = 0;
-
   // Test the LFSR implementation
-  // int result = test_lfsr_step();
-  // if (result != 0) {
-  //   printf("Error when testing LFSR implementation\n");
-  //   return 1;
-  // }
+  int result = test_lfsr_step();
+  if (result != 0) {
+    printf("Error when testing LFSR implementation\n");
+    return 1;
+  }
 
   // // TODO - add tests here for other functionality
   // // You can craft arbitrary array data as inputs to the functions

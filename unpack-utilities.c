@@ -190,7 +190,23 @@ uint16_t lfsr_step(uint16_t oldstate) {
   // Calculate the new LFSR state given previous state
   // Return the new LFSR state
 
-  return 0;
+  // extract the tagged bits: 
+  uint16_t b0 = (oldstate >> 0) & 1u;
+  uint16_t b6 = (oldstate >> 6) & 1u;
+  uint16_t b9 = (oldstate >> 9) & 1u;
+  uint16_t b13 = (oldstate >> 13) & 1u;
+
+  // XOR them to get newbit
+  uint16_t newbit = (uint16_t)(b0 ^ b6 ^ b9 ^ b13); // gives 0 or 1
+
+  // right shift oldstate by 1
+  uint16_t shifted = (uint16_t)(oldstate >> 1);
+
+  //insert newbit into MSb psn: left shit newbit to create space,  OR newbit with old state
+  uint16_t newstate = (uint16_t)((newbit << 15) | shifted);
+
+  // return the next lfsr state
+  return newstate;
 }
 
 void decrypt_data(uint8_t* input_data, size_t input_len,
