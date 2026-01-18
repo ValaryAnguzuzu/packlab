@@ -218,7 +218,57 @@ void decrypt_data(uint8_t* input_data, size_t input_len,
   // Uses lfsr_step() to calculate psuedorandom numbers, initialized with encryption_key
   // Step the LFSR once before encrypting data
   // Apply psuedorandom number with an XOR in little-endian order
-  // Beware: input_data may be an odd number of bytes
+  // Beware: input_data may be an odd number of bytes: XOR with LSB
+
+    //start state = encryption_key
+    // for every 2 bytes:
+      // Step the LFSR once
+      // XOR input at first psn with LSB
+      // XOR input at second psn with MSB
+    // if one byte remains:
+      // step the LFSR once
+      // XOR input at first psn with LSB
+
+  // bad pointers
+  if (input_data == NULL || output_data == NULL) return;
+  
+  // we should nevre write past out put data:
+  if (output_len < input_len) return;
+
+  // LFSR initial state => encryption key
+  uint16_t state = encryption_key;
+
+  // process pairs of bytes
+  size_t i = 0;
+  while (i + 1 < input_len) {
+    // generate next LFSR state
+    state = lfsr_step(state);
+
+    // split the 16bit (2bytes) output into LSB -> MSB (1 byte each = 8bits)
+    uint8_t key_lo = (uint8_t)(state & 0x00FFu); // LSB
+    uint8_t key_hi = (uint8_t)((state >> 8) & 0x00FFu); // MSB
+
+
+    // XOR the two input bytes with the two key bytes (LSB -> MSB) and write the results to output data
+    output_data[i]     = (uint8_t)(input_data[i] ^ key_lo); // first input byte uses LSB key
+    output_data[i + 1] = (uint8_t)(input_data[i+1] ^ key_hi); // second input byte uses MSB key
+
+    // advance by 2 bytes:
+    i += 2;
+  }
+
+  // if theres one leftover byte; xor with lsb
+  if (i < input_len) {
+    // genrate next LFSR state for this last byte
+    state = lfsr_step(state);
+
+    // use LSB only
+    uint8_t key_lo = (uint8_t)(state & 0x00FFu); // LSB
+
+    // XOR
+    output_data[i] = (uint8_t)(input_data[i] ^ key_lo);
+
+  }
 
 }
 
