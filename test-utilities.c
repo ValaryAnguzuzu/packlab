@@ -715,6 +715,109 @@ int test_decompress_empty_input(void) {
   return 0;
 }
 
+//----------------------------------------------
+//          TWO-STREAM FLOATING POINT TESTS
+//----------------------------------------------
+// Helper: compare 4 bytes and print them if mismatch
+static int assert_4bytes_eq(const uint8_t* got, const uint8_t* exp, const char* msg) {
+  // memcmp == 0 means identical
+  if (memcmp(got, exp, 4) != 0) {
+    printf("FAIL %s: got [%02X %02X %02X %02X] expected [%02X %02X %02X %02X]\n",
+           msg,
+           got[0], got[1], got[2], got[3],
+           exp[0], exp[1], exp[2], exp[3]);
+    return 1;
+  }
+  return 0;
+}
+
+//Handout example: float 300.0 = 0x43960000
+// Little-endian bytes of the final float: [00 00 96 43]
+// signfrac = 0x160000 -> bytes [00 00 16]
+// exp      = 0x87
+int test_join_float_single_300(void) {
+  // signfrac stream holds 3 bytes per float (little-endian)
+  uint8_t signfrac[] = { 0x00, 0x00, 0x16 };
+
+  // exponent stream holds 1 byte per float
+  uint8_t exp[] = { 0x87 };
+
+  // output must hold 4 bytes per float
+  uint8_t out[4] = { 0xAA, 0xAA, 0xAA, 0xAA }; // fill so we can detect writes
+
+  join_float_array(signfrac, sizeof(signfrac), exp, sizeof(exp), out, sizeof(out));
+
+  // Expected little-endian float bytes for 0x43960000
+  uint8_t expected[4] = { 0x00, 0x00, 0x96, 0x43 };
+
+  return assert_4bytes_eq(out, expected, "test_join_float_single_300");
+}
+
+//float bits: 0xDEADBEEF
+// Little-endian bytes should be: [EF BE AD DE]
+//   stream1(signfrac) = 0xAD BEEF (24 bits) -> little-endian bytes [EF BE AD]
+//   stream2(exp)      = 0xBD
+int test_join_float_single_deadbeef(void) {
+  uint8_t signfrac[] = { 0xEF, 0xBE, 0xAD }; // 0xAD BEEF as 3 bytes little-endian
+  uint8_t exp[]      = { 0xBD };
+
+  uint8_t out[4] = { 0xAA, 0xAA, 0xAA, 0xAA };
+
+  join_float_array(signfrac, sizeof(signfrac), exp, sizeof(exp), out, sizeof(out));
+
+  // 0xDEADBEEF in little-endian is EF BE AD DE
+  uint8_t expected[4] = { 0xEF, 0xBE, 0xAD, 0xDE };
+
+  return assert_4bytes_eq(out, expected, "test_join_float_single_deadbeef");
+}
+// n = 0 (empty streams)
+// We expect: function does nothing,
+int test_join_float_empty(void) {
+  uint8_t out[4] = { 0xAA, 0xAA, 0xAA, 0xAA };
+
+  join_float_array(NULL, 0, NULL, 0, out, sizeof(out));
+
+  // Output should remain unchanged if nothing to process
+  uint8_t expected[4] = { 0xAA, 0xAA, 0xAA, 0xAA };
+  return assert_4bytes_eq(out, expected, "test_join_float_empty");
+}
+
+// length mismatch (signfrac not 3*n or exp not n)
+// We expect: function returns without writing
+int test_join_float_length_mismatch(void) {
+  // signfrac length is 4 (not divisible by 3) => invalid
+  uint8_t signfrac[] = { 0x00, 0x00, 0x16, 0xFF };
+  uint8_t exp[]      = { 0x87 };
+
+  uint8_t out[4] = { 0xAA, 0xAA, 0xAA, 0xAA };
+
+  join_float_array(signfrac, sizeof(signfrac), exp, sizeof(exp), out, sizeof(out));
+
+  // we should not touch output?
+  uint8_t expected[4] = { 0xAA, 0xAA, 0xAA, 0xAA };
+  return assert_4bytes_eq(out, expected, "test_join_float_length_mismatch");
+}
+
+// output buffer too small
+// We expect: function returns without writing
+int test_join_float_output_too_small(void) {
+  uint8_t signfrac[] = { 0x00, 0x00, 0x16 }; // 1 float
+  uint8_t exp[]      = { 0x87 };
+
+  // Output is only 3 bytes, but needs 4
+  uint8_t out[3] = { 0xAA, 0xAA, 0xAA };
+
+  join_float_array(signfrac, sizeof(signfrac), exp, sizeof(exp), out, sizeof(out));
+
+  // Output should remain unchanged
+  if (out[0] != 0xAA || out[1] != 0xAA || out[2] != 0xAA) {
+    printf("FAIL test_join_float_output_too_small: output was modified\n");
+    return 1;
+  }
+  return 0;
+}
+
+
 
 int main(void) {
   // Test the LFSR implementation
@@ -808,6 +911,26 @@ int main(void) {
 
   result = test_decompress_empty_input();
   if (result != 0) { printf("ERROR: test_decompress_empty_input failed\n"); return 1; }
+
+  // test two-stream floating point
+    result = test_join_float_single_300();
+  if (result != 0) { printf("ERROR: test_join_float_single_300 failed\n"); return 1; }
+
+  result = test_join_float_single_deadbeef();
+  if (result != 0) { printf("ERROR: test_join_float_single_deadbeef failed\n"); return 1; }
+
+  result = test_join_float_two_values();
+  if (result != 0) { printf("ERROR: test_join_float_two_values failed\n"); return 1; }
+
+  result = test_join_float_empty();
+  if (result != 0) { printf("ERROR: test_join_float_empty failed\n"); return 1; }
+
+  result = test_join_float_length_mismatch();
+  if (result != 0) { printf("ERROR: test_join_float_length_mismatch failed\n"); return 1; }
+
+  result = test_join_float_output_too_small();
+  if (result != 0) { printf("ERROR: test_join_float_output_too_small failed\n"); return 1; }
+
 
   printf("All tests passed successfully!\n");
   return 0;
