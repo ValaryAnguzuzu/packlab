@@ -540,7 +540,180 @@ int test_decrypt_output_len_too_small(void) {
   return 0;
 }
 
+//-------------------------------------
+//        DECOMPRESSION TESTS
+//--------------------------------------
+// a demo dictionary of 16 bytes
+static void demo_dictionary(uint8_t dict[DICTIONARY_LENGTH]) {
+  for (int i = 0; i < DICTIONARY_LENGTH; i++) {
+    dict[i] = (uint8_t)(0x30 + i); // 0x30, 0x31....0x3F
+  }
+}
 
+int test_decompress_handout_example(void) {
+  uint8_t dict[DICTIONARY_LENGTH];
+  demo_dictionary(dict);
+
+  //compresssed inpput from handout
+  uint8_t input_data[] = {0x01, 0x07, 0x42};
+  uint8_t output_data[32];
+  memset(output_data, 0xAA, sizeof(output_data)); // fill it with junk first
+
+  // run decompression
+  size_t out_len = decompress_data(input_data, sizeof(input_data),
+                                   output_data, sizeof(output_data),
+                                   dict);
+  // expected result
+  uint8_t expected[] = {0x01, 0x32, 0x32, 0x32, 0x32};
+
+  // check returned length
+  if (out_len != sizeof(expected)) {
+    printf("FAIL test_decompress_handout_example: out_len got %lu expected %lu\n", (unsigned long)out_len, (unsigned long)sizeof(expected));
+    return 1;
+  }
+
+  // check bytes
+  if (memcmp(output_data, expected, sizeof(expected)) != 0) {
+    printf("FAIL test_decompress_handout_example: output bytes mismatch\n");
+    return 1;
+  }
+  return 0;
+}
+
+// literal escape case: input = [0x07, 0x00] output = [0x07]
+int test_decompress_literal_escape(void) {
+  uint8_t dict[DICTIONARY_LENGTH];
+  demo_dictionary(dict);
+
+  uint8_t input_data[] = {0x07, 0x00};
+
+  uint8_t output_data[8];
+  memset(output_data, 0xAA, sizeof(output_data));
+
+  size_t out_len = decompress_data(input_data, sizeof(input_data),
+                                   output_data, sizeof(output_data),
+                                   dict);
+
+  uint8_t expected[] = {0x07};
+
+  if (out_len != sizeof(expected)) {
+    printf("FAIL test_decompress_literal_escape: out_len got %lu expected %lu\n",
+           (unsigned long)out_len, (unsigned long)sizeof(expected));
+    return 1;
+  }
+
+  if (memcmp(output_data, expected, sizeof(expected)) != 0) {
+    printf("FAIL test_decompress_literal_escape: output bytes mismatch\n");
+    return 1;
+  }
+
+  return 0;
+} 
+
+// last byte as escape byte: input = [0xAA, 0x07] output = [0xAA, 0x07]
+int test_decompress_trailing_escape_byte(void) {
+  uint8_t dict[DICTIONARY_LENGTH];
+  demo_dictionary(dict);
+
+  uint8_t input_data[] = {0xAA, 0x07};
+
+  uint8_t output_data[8];
+  memset(output_data, 0xAA, sizeof(output_data));
+
+  size_t out_len = decompress_data(input_data, sizeof(input_data),
+                                   output_data, sizeof(output_data),
+                                   dict);
+
+  uint8_t expected[] = {0xAA, 0x07};
+
+  if (out_len != sizeof(expected)) {
+    printf("FAIL test_decompress_trailing_escape_byte: out_len got %lu expected %lu\n",
+           (unsigned long)out_len, (unsigned long)sizeof(expected));
+    return 1;
+  }
+
+  if (memcmp(output_data, expected, sizeof(expected)) != 0) {
+    printf("FAIL test_decompress_trailing_escape_byte: output bytes mismatch\n");
+    return 1;
+  }
+
+  return 0;
+}
+
+// mixed literals + one run
+int test_decompress_mixed_literals_and_run(void) {
+  uint8_t dict[DICTIONARY_LENGTH];
+  demo_dictionary(dict);
+
+  uint8_t input_data[] = {0x10, 0x07, 0x21, 0x20};
+
+  uint8_t output_data[16];
+  memset(output_data, 0xAA, sizeof(output_data));
+
+  size_t out_len = decompress_data(input_data, sizeof(input_data),
+                                   output_data, sizeof(output_data),
+                                   dict);
+
+  uint8_t expected[] = {0x10, 0x31, 0x31, 0x20};
+
+  if (out_len != sizeof(expected)) {
+    printf("FAIL test_decompress_mixed_literals_and_run: out_len got %lu expected %lu\n",
+           (unsigned long)out_len, (unsigned long)sizeof(expected));
+    return 1;
+  }
+
+  if (memcmp(output_data, expected, sizeof(expected)) != 0) {
+    printf("FAIL test_decompress_mixed_literals_and_run: output bytes mismatch\n");
+    return 1;
+  }
+
+  return 0;
+}
+
+// repeat-count = 0 => write nothing
+int test_decompress_repeat_count_zero(void) {
+  uint8_t dict[DICTIONARY_LENGTH];
+  demo_dictionary(dict);
+
+  uint8_t input_data[] = {0x07, 0x02};
+
+  uint8_t output_data[8];
+  memset(output_data, 0xAA, sizeof(output_data));
+
+  size_t out_len = decompress_data(input_data, sizeof(input_data),
+                                   output_data, sizeof(output_data),
+                                   dict);
+
+  // Expect nothing written
+  if (out_len != 0) {
+    printf("FAIL test_decompress_repeat_count_zero: out_len got %lu expected 0\n",
+           (unsigned long)out_len);
+    return 1;
+  }
+
+  return 0;
+}
+// empty input => decompress writes nothing
+int test_decompress_empty_input(void) {
+  uint8_t dict[DICTIONARY_LENGTH];
+  demo_dictionary(dict);
+
+  uint8_t dummy = 0xFF;        // dummy byte
+  uint8_t output_data[8];
+  memset(output_data, 0xAA, sizeof(output_data));
+
+  size_t out_len = decompress_data(&dummy, 0,
+                                   output_data, sizeof(output_data),
+                                   dict);
+
+  if (out_len != 0) {
+    printf("FAIL test_decompress_empty_input: out_len got %lu expected 0\n",
+           (unsigned long)out_len);
+    return 1;
+  }
+
+  return 0;
+}
 
 
 int main(void) {
@@ -617,6 +790,24 @@ int main(void) {
   result = test_decrypt_output_len_too_small();
   if (result != 0) { printf("ERROR: test_decrypt_output_len_too_small failed\n"); return 1; }
 
+  //test decompress
+  result = test_decompress_handout_example();
+  if (result != 0) { printf("ERROR: test_decompress_handout_example failed\n"); return 1; }
+
+  result = test_decompress_literal_escape();
+  if (result != 0) { printf("ERROR: test_decompress_literal_escape failed\n"); return 1; }
+
+  result = test_decompress_trailing_escape_byte();
+  if (result != 0) { printf("ERROR: test_decompress_trailing_escape_byte failed\n"); return 1; }
+
+  result = test_decompress_mixed_literals_and_run();
+  if (result != 0) { printf("ERROR: test_decompress_mixed_literals_and_run failed\n"); return 1; }
+
+  result = test_decompress_repeat_count_zero();
+  if (result != 0) { printf("ERROR: test_decompress_repeat_count_zero failed\n"); return 1; }
+
+  result = test_decompress_empty_input();
+  if (result != 0) { printf("ERROR: test_decompress_empty_input failed\n"); return 1; }
 
   printf("All tests passed successfully!\n");
   return 0;
