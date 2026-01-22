@@ -403,9 +403,102 @@ void join_float_array(uint8_t* input_signfrac, size_t input_len_bytes_signfrac,
       // sign-frac[0,1,2] pairs with exp[0]
       // sign-frac[3,4,5] pairs with exp[1]
       // little endian for sign-frac and output float
-      
 
+  // out[0] = fraction bits 0..7     = signfrac[0]
+  //out[1] = fraction bits 8..15    = signfrac[1]
+  //out[2] = fraction bits 16..22   (7 bits)  + exponent bit0 as the MSB
+  //out[3] = exponent bits 1..7     (7 bits)  + sign bit as the MSB
 
+  // no output data
+  if (output_data == NULL){
+    return; // nowhere to write
+  }
+  // if both inputs are empty, do nothing
+  if (input_len_bytes_signfrac == 0 && input_len_bytes_exp == 0) {
+    return;
+  }
+
+  // If one input pointer is NULL but length is non-zero, we can't read safely
+  if (input_signfrac == NULL || input_exp == NULL) {
+    return;
+  }
+
+  // valid lengths: ach float needs: signfrac: 3 bytes; exp: 1 byte
+  // So signfrac length MUST be divisible by 3, and exp length must match float count
+  if (input_len_bytes_signfrac % 3 != 0) {
+    return; // invalid signfrac stream length
+  }
+
+  // Number of floats is determined by signfrac length
+  size_t n_floats = input_len_bytes_signfrac / 3;
+
+  // exp must have exactly 1 byte per float
+  if (input_len_bytes_exp != n_floats) {
+    return; // streams disagree on float count
+  }
+
+  // Output must have at least 4 bytes per float
+  if (output_len_bytes < 4 * n_floats) {
+    return; // not enough space to write output floats
+  }
+
+  // join each float
+  for (size_t i = 0; i < n_floats; i++) {
+    // Read the 3 signfrac bytes for float i
+      // [ sign ][ exp7 exp6 exp5 exp4 exp3 exp2 exp1 exp0 ][ frac22 ... frac0 ]
+      // signfrac is little-endian:
+        // byte0 = frac0  frac1  frac2  frac3  frac4  frac5  frac6  frac7 (lowest adrress)
+        // byte1 = frac0  frac1  frac2  frac3  frac4  frac5  frac6  frac7
+        // byte2 = frac16 frac17 frac18 frac19 frac20 frac21 frac22 exp0
+        // byte3 = exp1 exp2 exp3 exp4 exp5 exp6 exp7 sign (highest address)
+      // out[0] = fraction bits 0..7     = signfrac[0]
+      // out[1] = fraction bits 8..15    = signfrac[1]
+      // out[2] = fraction bits 16..22 + exponent bit0
+      // out[3] = exponent bits 1..7 + sign bit
+
+    uint8_t b0 = input_signfrac[3 * i + 0];
+    uint8_t b1 = input_signfrac[3 * i + 1];
+    uint8_t b2 = input_signfrac[3 * i + 2];
+
+    // Read exponent byte for float i
+    uint8_t exp = input_exp[i];
+
+    //Extract sign bit (1 bit) from b2's MSB: sign = 0 or 1
+    uint8_t sign = (uint8_t)((b2 >> 7) & 0x01u);
+
+    // Extract the top 7 fraction bits from b2 (bits0..6)
+    uint8_t frac_hi7 = (uint8_t)(b2 & 0x7Fu);
+
+    // final IEEE-754 float bytes in little-endian order:
+      // output[0] = b0
+      // output[1] = b1
+      //
+      // output[2]:
+          // bits0..6 = frac_hi7
+          // bit7     = exponent bit0
+      //
+      // output[3]:
+          // bits0..6 = exponent bits1..7  (that's exp >> 1)
+          // bit7     = sign
+
+    // exponent bit0 is the least significant bit of exp
+    uint8_t exp_bit0 = (uint8_t)(exp & 0x01u);
+
+    // exponent bits1..7 become a 7-bit value (exp shifted right by 1)
+    uint8_t exp_hi7 = (uint8_t)(exp >> 1);
+
+    // Construct byte2 (fraction hi7 + exponent bit0 in MSB)
+    uint8_t out2 = (uint8_t)(frac_hi7 | (uint8_t)(exp_bit0 << 7));
+
+    // Construct byte3 (exponent hi7 + sign in MSB)
+    uint8_t out3 = (uint8_t)(exp_hi7 | (uint8_t)(sign << 7));
+
+  // Write the 4 bytes into output
+    output_data[4 * i + 0] = b0;
+    output_data[4 * i + 1] = b1;
+    output_data[4 * i + 2] = out2;
+    output_data[4 * i + 3] = out3;
+  }
 
 }
 /* End of mandatory implementation. */
