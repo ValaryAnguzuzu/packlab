@@ -272,6 +272,10 @@ void decrypt_data(uint8_t* input_data, size_t input_len,
 
 }
 
+// Decompresses input data, creating output data
+// Returns the length of valid data inside the output data (<=output_len)
+// Expects a previously calculated compression dictionary
+// Writes uncompressed data directly into `output_data`
 size_t decompress_data(uint8_t* input_data, size_t input_len,
                        uint8_t* output_data, size_t output_len,
                        uint8_t* dictionary_data) {
@@ -280,7 +284,102 @@ size_t decompress_data(uint8_t* input_data, size_t input_len,
   // Decompress input_data and write result to output_data
   // Return the length of the decompressed data
 
-  return 0;
+  // we have a stream of compressed bytes(input_data); goal os to rebuild the original bytes(output_data) excatly
+  // in input_data each byte is either:
+    // a normal literal byte => this exact byte is part of the orig file
+    // special byte: 0x07 => check the next byte: 
+      // byte after is 0x00 => not a compression: 0x07 0x00 = 0x07
+      // byte after is not 0x00 => bits 0-3: dict index (0-15) => bits 4-7: repeat count (0-15)
+
+    // if input[i] != 0x07: copy it to output, i++
+    // else (inout[i] == 0x07):
+      // if i == input_len -1 (last byte): output literal, i++
+      // else:
+        // decode repeat-count and dict-index
+        // output repeated bytes, from index dict-index; repeat-count times
+        // i += 2
+      // track output_len so we dont write beyond it
+  if (input_data == NULL || output_data == NULL || dictionary_data == NULL){
+    return 0;}
+  size_t out_pos = 0;
+
+  // walk through output buffer
+  size_t i = 0;
+  while (i < input_len) {
+    // read the curr input byte
+    uint8_t b = input_data[i];
+
+    // normal case
+    if (b != ESCAPE_BYTE) {
+      // don't write past buffer
+      if (out_pos >= output_len) {
+        return out_pos;
+      }
+      // copy literal byte directly to output
+      output_data[out_pos] = b;
+      out_pos++;
+
+      // move to next input byte
+      i++;
+      continue;
+    }
+
+    // if we get here; escape byte = 0x07
+    // if the escape byte is the very last byte, treat as a normal literal
+    if (i == input_len - 1) {
+      if (out_pos >= output_len) {
+        return out_pos;
+      }
+
+      output_data[out_pos] = ESCAPE_BYTE;
+      out_pos++;
+      i++; // this is the last byte
+      continue;
+    }
+
+    // otherwise THERE IS a second byte
+    uint8_t code = input_data[i+1];
+
+    // case: [0x07, 0x00]
+    if (code == 0x00){
+      if (out_pos >= output_len) {
+        return out_pos;
+      }
+
+      output_data[out_pos] = ESCAPE_BYTE;
+      out_pos++;
+
+      i += 2; // pass both input bytes
+      continue;
+    }
+
+    // compressed run encoding is [0x07, code]
+      // low 4 bits = dict-index
+      // high 4 bits = repeat-count
+    uint8_t dict_index = (uint8_t)(code & 0x0Fu); // extract the low 4 bits
+    uint8_t repeat_count = (uint8_t)((code >> 4) & 0x0Fu); // extract the upper 4  bits
+
+    // get the byte to repeat from dictionary
+    uint8_t value_to_repeat = dictionary_data[dict_index];
+
+    // write this value to output repeat-count times
+    for (uint8_t r=0; r<repeat_count; r++) {
+      if (out_pos >= output_len){
+        return out_pos;
+      }
+
+      output_data[out_pos] = value_to_repeat;
+      out_pos++;
+    }
+
+    // pass both input bytes 
+    i += 2;
+
+  }
+
+  // return how many bytes wrote to output-data
+
+  return out_pos;
 }
 
 void join_float_array(uint8_t* input_signfrac, size_t input_len_bytes_signfrac,
@@ -291,6 +390,22 @@ void join_float_array(uint8_t* input_signfrac, size_t input_len_bytes_signfrac,
   // Combine two streams of bytes, one with signfrac data and one with exp data,
   // into one output stream of floating point data
   // Output bytes are in little-endian order
+  // when float? is true:
+    // for each float pack:
+      // takes the sigh bit takes the 23 bit frac => combine them into 24 bits and store them into  sign-frac 
+      // takes the 8bit exponent => stores it in exp stream
+  // for float i:
+    // read 3 bytes from sign-frac
+    // read 1 byte from exp
+    // reconstruct 32 bit value [sign-frac(24bits)][exponent(8bits)]
+    // write out float in little endian
+      // stream length must match: sig-frac-bytes = exp-bytes * 3
+      // sign-frac[0,1,2] pairs with exp[0]
+      // sign-frac[3,4,5] pairs with exp[1]
+      // little endian for sign-frac and output float
+      
+
+
 
 }
 /* End of mandatory implementation. */
