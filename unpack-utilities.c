@@ -107,6 +107,10 @@ void parse_header(uint8_t* input_data, size_t input_len, packlab_config_t* confi
     header_len += 2;
   }
 
+  if (header_len > MAX_HEADER_SIZE) {
+    return;
+  }
+
   // If we weren't given enough bytes to cover the computed header_len, it's invalid
   if (input_len < header_len) {
     return;
@@ -359,6 +363,14 @@ size_t decompress_data(uint8_t* input_data, size_t input_len,
     uint8_t dict_index = (uint8_t)(code & 0x0Fu); // extract the low 4 bits
     uint8_t repeat_count = (uint8_t)((code >> 4) & 0x0Fu); // extract the upper 4  bits
 
+    if (dict_index >= DICTIONARY_LENGTH) {
+      return out_pos;
+    }
+
+    if (repeat_count >= MAX_RUN_LENGTH) {
+      return out_pos;
+    }
+
     // get the byte to repeat from dictionary
     uint8_t value_to_repeat = dictionary_data[dict_index];
 
@@ -463,7 +475,7 @@ void join_float_array(uint8_t* input_signfrac, size_t input_len_bytes_signfrac,
     // Read exponent byte for float i
     uint8_t exp = input_exp[i];
 
-    //Extract sign bit (1 bit) from b2's MSB: sign = 0 or 1
+    //Extract sign bit (1 bit) from b2's MSb: sign = 0 or 1
     uint8_t sign = (uint8_t)((b2 >> 7) & 0x01u);
 
     // Extract the top 7 fraction bits from b2 (bits0..6)
@@ -504,6 +516,36 @@ void join_float_array(uint8_t* input_signfrac, size_t input_len_bytes_signfrac,
 /* End of mandatory implementation. */
 
 /* Extra credit */
+
+// Read ONE bit from a densely-packed bit array
+    // bit_offset 0 => LSB of byte 0
+    // bit_offset 7 => MSB of byte 0
+    // bit_offset 8 => LSB of byte 1, etc
+static uint8_t get_bit_from_array(const uint8_t* arr, size_t bit_offset) {
+// Which byte contains this bit?
+  size_t byte_index = bit_offset / 8;
+
+  // Which bit within that byte? (0 = LSB, 7 = MSB)
+  uint8_t bit_index_in_byte = (uint8_t)(bit_offset % 8);
+
+  // Extract it: shift down and mask to 0/1
+  return (uint8_t)((arr[byte_index] >> bit_index_in_byte) & 0x01u);
+}
+
+// Read num_bits bits from src starting at start_bit (LSB-first bit addressing), and pack them into the LOW bits of a uint32_t
+// Example: num_bits=23 returns a value in bits [0..22]
+static uint32_t read_bits_as_uint32(const uint8_t* src, size_t start_bit, size_t num_bits) {
+  uint32_t value = 0;
+
+  // For each bit we need, read it and place it into the correct position in 'value'
+  for (size_t i = 0; i < num_bits; i++) {
+    uint8_t bit = get_bit_from_array(src, start_bit + i); // 0 or 1
+    value |= ((uint32_t)bit << i);                        // place into bit i of value
+  }
+
+  return value;
+}
+
 void join_float_array_three_stream(uint8_t* input_frac,
                                    size_t   input_len_bytes_frac,
                                    uint8_t* input_exp,
@@ -518,5 +560,98 @@ void join_float_array_three_stream(uint8_t* input_frac,
   // and one with sign data, into one output stream of floating point data
   // Output bytes are in little-endian order
 
-}
+  // goal: Rebuild the original IEEE-754 32-bit floats (4 bytes each) from three separate streams:
+    // Mantissa (fraction) stream:
+      // Contains ONLY the 23 fraction bits for each float
+      // Stored densely packed: the bits for float0’s fraction are followed immediately by float1’s fraction, etc
+      //Because 23 isn’t a multiple of 8, bytes will “mix” bits from adjacent mantissas
 
+    // Exponent stream: 1 byte per float (8-bit exponent), so input_exp[i] is exponent for float i
+
+    // Sign stream:
+      // Contains 1 bit per float
+      // densely packed: 8 sign bits per byte
+      // Important convention: bit 0 of a byte is the first sign (LSB first)
+        // Example: 0b01100101 means: sign0 = 1 (bit0), sign1 = 0 (bit1), sign2 = 1 (bit2), sign3 = 0 (bit3), sign4 = 0 (bit4)
+          // sign5 = 1 (bit5), sign6 = 1 (bit6), sign7 = 0 (bit7)
+
+    // output: bit 31 = sign bits, bits 30..23 = exponent (8 bits), bits 22..0 = fraction/mantissa (23 bits) => LE
+
+
+  if (output_data == NULL) {
+    return; // nowhere to write
+  }
+
+  // If there is data (non-zero lengths), input pointers must be valid
+  if ((input_len_bytes_frac > 0 && input_frac == NULL) ||
+      (input_len_bytes_exp  > 0 && input_exp  == NULL) ||
+      (input_len_bytes_sign > 0 && input_sign == NULL)) {
+    return;
+  }
+
+  // How many floats exist?
+  // Exponent stream is 1 byte per float, so its length directly gives #floats
+  size_t n_floats = input_len_bytes_exp;
+
+  // If there are 0 floats, nothing to do
+  if (n_floats == 0) {
+    return;
+  }
+
+  // Output must have 4 bytes per float
+  if (output_len_bytes < 4 * n_floats) {
+    return; // not enough space to write results safely
+  }
+
+  // Validate frac/sign stream lengths
+  // Each float needs: 23 fraction bits and 1 sign bit
+  // So total required bits:
+  //   frac_bits_needed = 23 * n_floats
+  //   sign_bits_needed = 1  * n_floats
+  // Required bytes = ceil(bits / 8) = (bits + 7) / 8
+
+  size_t frac_bits_needed = 23 * n_floats;
+  size_t sign_bits_needed = 1  * n_floats;
+
+  size_t frac_bytes_needed = (frac_bits_needed + 7) / 8;
+  size_t sign_bytes_needed = (sign_bits_needed + 7) / 8;
+
+  // If the provided arrays are too short, we cannot safely read bits
+  if (input_len_bytes_frac < frac_bytes_needed) {
+    return;
+  }
+  if (input_len_bytes_sign < sign_bytes_needed) {
+    return;
+  }
+  
+  // Reconstructing each float
+  for (size_t i = 0; i < n_floats; i++) {
+
+    // 1) Read sign bit for float i (1 bit)
+    // The i-th sign bit lives at bit_offset=i in the sign bitstream
+    uint32_t sign = (uint32_t)get_bit_from_array(input_sign, i); // 0 or 1
+
+    // 2) Read exponent for float i (8 bits stored as one byte)
+    uint32_t exp = (uint32_t)input_exp[i];
+
+    // 3) Read 23 fraction bits for float i
+    // Fraction bits for float i start at bit offset 23*i in the fraction bitstream
+    size_t frac_start_bit = 23 * i;
+    uint32_t frac = read_bits_as_uint32(input_frac, frac_start_bit, 23); // bits [0..22]
+
+  // Encode IEEE754
+    //   bit 31        = sign
+    //   bits 30..23   = exponent (8 bits)
+    //   bits 22..0    = fraction (23 bits)
+    uint32_t word = 0;
+    word |= (frac & 0x007FFFFFu);        // keep only 23 bits
+    word |= ((exp & 0xFFu) << 23);       // exponent into bits 23..30
+    word |= ((sign & 0x1u) << 31);       // sign into bit 31
+
+    // 5) Write word to output in LITTLE-ENDIAN
+    output_data[4 * i + 0] = (uint8_t)((word >> 0)  & 0xFFu);
+    output_data[4 * i + 1] = (uint8_t)((word >> 8)  & 0xFFu);
+    output_data[4 * i + 2] = (uint8_t)((word >> 16) & 0xFFu);
+    output_data[4 * i + 3] = (uint8_t)((word >> 24) & 0xFFu);
+  }
+}

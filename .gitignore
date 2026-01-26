@@ -5,3 +5,8 @@ pack
 a.out
 _build/
 test-utilities
+
+test.log
+test.packed
+test.raw
+test.unpacked
