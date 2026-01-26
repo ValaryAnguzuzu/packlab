@@ -126,29 +126,6 @@ int test_checksum_single_byte(void) {
   }
   return 0;
 }
-// // overflow-----------------------------------
-// int test_checksum_overflow_wrap(void) {
-//   // 0xFFFF + 0x0002 = 0x10001 -> wraps to 0x0001 in uint16_t
-//   uint8_t data[] = { 0xFF, 0xFF, 0x02 }; // 255 + 255 + 2 = 512 = 0x0200 (not overflow)
-//   // The above does NOT overflow 16-bit, so we need a larger sum.
-
-//   // Better: use many 0xFF bytes. 257 bytes of 0xFF = 257*255 = 655...?
-//   // 255*257 = 255*(256+1) = 65280 + 255 = 65535 = 0xFFFF
-//   // Then add 0x02 -> 0x0001 after wrap.
-//   uint8_t big[258];
-//   for (int i = 0; i < 257; i++) {
-//     big[i] = 0xFF;
-//   }
-//   big[257] = 0x02;
-
-//   uint16_t got = calculate_checksum(big, sizeof(big));
-//   if (got != 0x0001) {
-//     printf("FAIL test_checksum_overflow_wrap: got 0x%04X expected 0x0001\n", got);
-//     return 1;
-//   }
-//   return 0;
-// }
-
 
 //--------------------------------------
 //          PARSE_HEADER TESTS:
@@ -979,15 +956,6 @@ int main(void) {
 
   result = test_checksum_single_byte();
   if (result != 0) { printf("ERROR: test_checksum_single_byte failed\n"); return 1; }
-
-  // result = test_checksum_overflow_wrap();
-  // if (result != 0) { printf("ERROR: test_checksum_overflow_wrap failed\n"); return 1; }
-
-  // result = test_checksum_pattern_0_to_255();
-  // if (result != 0) { printf("ERROR: test_checksum_pattern_0_to_255 failed\n"); return 1; }
-
-  // result = test_checksum_null_len0();
-  // if (result != 0) { printf("ERROR: test_checksum_null_len0 failed\n"); return 1; }
   
 
   // Test parse_header implementation
