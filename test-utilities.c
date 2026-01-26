@@ -817,6 +817,142 @@ int test_join_float_output_too_small(void) {
   return 0;
 }
 
+// --------------------------------------------
+//        TRI-STREAM FLOATING POINT TESTS
+// --------------------------------------------
+
+//IEEE-754 reference:
+  // +1.0 = 0x3F800000 -> 00 00 80 3F
+  // -1.0 = 0xBF800000 -> 00 00 80 BF
+
+
+// Helper: compare byte arrays 
+static int bytes_equal(const uint8_t* a, const uint8_t* b, size_t n) {
+  return memcmp(a, b, n) == 0;
+}
+
+ // Single float +1.0
+int test_float3_single_pos1(void) {
+  uint8_t frac[] = { 0x00, 0x00, 0x00 };   // fraction = 0
+  uint8_t exp[]  = { 0x7F };               // exponent = 127
+  uint8_t sign[] = { 0x00 };               // sign bit = 0
+
+  uint8_t out[4] = { 0 };
+
+  join_float_array_three_stream(
+      frac, sizeof(frac),
+      exp,  sizeof(exp),
+      sign, sizeof(sign),
+      out,  sizeof(out));
+
+  uint8_t expected[] = { 0x00, 0x00, 0x80, 0x3F };
+
+  if (!bytes_equal(out, expected, 4)) {
+    printf("FAIL test_float3_single_pos1\n");
+    return 1;
+  }
+  return 0;
+}
+
+ // Single float -1.0
+int test_float3_single_neg1(void) {
+  uint8_t frac[] = { 0x00, 0x00, 0x00 };
+  uint8_t exp[]  = { 0x7F };
+  uint8_t sign[] = { 0x01 };   // bit0 = 1 -> negative
+
+  uint8_t out[4] = { 0 };
+
+  join_float_array_three_stream(
+      frac, sizeof(frac),
+      exp,  sizeof(exp),
+      sign, sizeof(sign),
+      out,  sizeof(out));
+
+  uint8_t expected[] = { 0x00, 0x00, 0x80, 0xBF };
+
+  if (!bytes_equal(out, expected, 4)) {
+    printf("FAIL test_float3_single_neg1\n");
+    return 1;
+  }
+  return 0;
+}
+
+// Two floats: +1.0, -1.0
+int test_float3_two_values(void) {
+  uint8_t frac[] = {
+    0x00, 0x00, 0x00,   // float 0
+    0x00, 0x00, 0x00    // float 1
+  };
+
+  uint8_t exp[]  = { 0x7F, 0x7F };
+
+  // Sign bits packed LSB-first:
+    // bit0 -> float 0 (0)
+    // bit1 -> float 1 (1) => 00000010 = 0x02
+   
+  uint8_t sign[] = { 0x02 };
+
+  uint8_t out[8] = { 0 };
+
+  join_float_array_three_stream(
+      frac, sizeof(frac),
+      exp,  sizeof(exp),
+      sign, sizeof(sign),
+      out,  sizeof(out));
+
+  uint8_t expected[] = {
+    0x00, 0x00, 0x80, 0x3F,  // +1.0
+    0x00, 0x00, 0x80, 0xBF   // -1.0
+  };
+
+  if (!bytes_equal(out, expected, 8)) {
+    printf("FAIL test_float3_two_values\n");
+    return 1;
+  }
+  return 0;
+}
+
+// zero-length inputs
+int test_float3_zero_length(void) {
+  uint8_t out[4] = { 0xAA, 0xAA, 0xAA, 0xAA };
+
+  join_float_array_three_stream(
+      NULL, 0,
+      NULL, 0,
+      NULL, 0,
+      out, sizeof(out));
+
+  for (int i = 0; i < 4; i++) {
+    if (out[i] != 0xAA) {
+      printf("FAIL test_float3_zero_length\n");
+      return 1;
+    }
+  }
+  return 0;
+}
+
+// output buffer too small
+int test_float3_output_too_small(void) {
+  uint8_t frac[] = { 0x00, 0x00, 0x00 };
+  uint8_t exp[]  = { 0x7F };
+  uint8_t sign[] = { 0x00 };
+
+  uint8_t out[3] = { 0xCC, 0xCC, 0xCC };
+
+  join_float_array_three_stream(
+      frac, sizeof(frac),
+      exp,  sizeof(exp),
+      sign, sizeof(sign),
+      out,  sizeof(out));
+
+  for (int i = 0; i < 3; i++) {
+    if (out[i] != 0xCC) {
+      printf("FAIL test_float3_output_too_small\n");
+      return 1;
+    }
+  }
+  return 0;
+}
 
 
 int main(void) {
@@ -930,6 +1066,23 @@ int main(void) {
 
   result = test_join_float_output_too_small();
   if (result != 0) { printf("ERROR: test_join_float_output_too_small failed\n"); return 1; }
+  
+
+  // test tri-stream floating point
+  result = test_float3_single_pos1();
+  if (result != 0) { printf("ERROR: test_float3_single_pos1 failed\n"); return 1; }
+
+  result = test_float3_single_neg1();
+  if (result != 0) {printf("ERROR: test_float3_single_neg1 failed\n"); return 1; }
+
+  result = test_float3_two_values();
+  if (result != 0) { printf("ERROR: test_float3_two_values failed\n"); return 1; }
+
+  result = test_float3_zero_length();
+  if (result != 0) { printf("ERROR: test_float3_zero_length failed\n"); return 1; }
+
+  result = test_float3_output_too_small();
+  if (result != 0) { printf("ERROR: test_float3_output_too_small failed\n"); return 1; }
 
 
   printf("All tests passed successfully!\n");
